@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import PrintForm from './components/PrintForm.vue'
+import PrintPage from './views/PrintPage.vue'
 </script>
 
 <template>
-  <PrintForm />
+  <PrintPage />
 </template>
