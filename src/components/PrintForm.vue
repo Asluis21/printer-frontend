@@ -465,13 +465,16 @@ const onInvalid = async (event: Event) => {
 
       <!-- COPIES SETTINGS -->
 
+      <!-- COPIES SETTINGS -->
+
       <div
           v-show="activeSection === 'copies'"
           class="section"
           data-section="copies"
       >
-
-        <h2 class="section-title">Copies settings</h2>
+        <h2 class="section-title">
+          Copies settings
+        </h2>
 
         <p class="hint">
           Choose how many identical labels to print.
@@ -512,15 +515,9 @@ const onInvalid = async (event: Event) => {
 
         </div>
 
-        <div class="grid-result">
-          <strong>{{ copies }}</strong>
-
-          <span>
-            {{ copies === 1 ? 'Label' : 'Labels' }}
-            per print job
-          </span>
-        </div>
-
+        <p class="hint">
+          Maximum 99 copies per print job.
+        </p>
       </div>
 
     </fieldset>
