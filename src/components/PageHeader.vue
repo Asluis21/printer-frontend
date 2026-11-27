@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { EditorSection } from '../types/printer'
+import type {
+  EditorSection,
+  ActiveEditorSection
+} from '../types/printer'
 
 defineProps<{
   eyebrow: string
@@ -7,15 +10,23 @@ defineProps<{
   subtitle: string
 }>()
 
-const activeSection = defineModel<EditorSection>('activeSection', {
-  required: true
-})
+const activeSection = defineModel<ActiveEditorSection>(
+    'activeSection',
+    { required: true }
+)
 
 const options: { label: string; value: EditorSection }[] = [
   { label: 'Text', value: 'text' },
   { label: 'Grid', value: 'grid' },
   { label: 'Copies', value: 'copies' }
 ]
+
+const toggleSection = (section: EditorSection) => {
+  activeSection.value =
+      activeSection.value === section
+          ? null
+          : section
+}
 </script>
 
 <template>
@@ -35,7 +46,7 @@ const options: { label: string; value: EditorSection }[] = [
           class="nav-button"
           :class="{ active: activeSection === option.value }"
           :aria-pressed="activeSection === option.value"
-          @click="activeSection = option.value"
+          @click="toggleSection(option.value)"
       >
         {{ option.label }}
       </button>

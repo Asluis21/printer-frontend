@@ -5,15 +5,14 @@ import PageHeader from '../components/PageHeader.vue'
 import PrintForm from '../components/PrintForm.vue'
 import LabelPreview from '../components/LabelPreview.vue'
 import PrintHistory from '../components/PrintHistory.vue'
-
 import { usePrintEditor } from '../composables/usePrintEditor'
-import type { EditorSection } from '../types/printer'
+import type { ActiveEditorSection } from '../types/printer'
 
 const editor = usePrintEditor()
 
 const { history, loading, reuse } = editor
 
-const activeSection = ref<EditorSection>('text')
+const activeSection = ref<ActiveEditorSection>(null)
 </script>
 
 <template>

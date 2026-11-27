@@ -2,11 +2,13 @@
 import { nextTick, ref } from 'vue'
 import { FONTS, MAX_ITEMS } from '../services/printerService'
 import type { PrintEditor } from '../composables/usePrintEditor'
-import type { EditorSection } from '../types/printer'
+import QuickEditor from './QuickEditor.vue'
+import type { ActiveEditorSection } from '../types/printer'
 
-const activeSection = defineModel<EditorSection>('activeSection', {
-  required: true
-})
+const activeSection = defineModel<ActiveEditorSection>(
+    'activeSection',
+    { required: true }
+)
 
 const props = defineProps<{
   editor: PrintEditor
@@ -120,6 +122,7 @@ const onInvalid = async (event: Event) => {
       @keydown="onFormKeydown"
       @invalid.capture="onInvalid"
   >
+
     <fieldset :disabled="loading">
       <div
           v-show="activeSection === 'text'"
@@ -275,6 +278,12 @@ const onInvalid = async (event: Event) => {
           </div>
         </div>
       </div>
+
+      <QuickEditor
+          v-if="activeSection === null"
+          :editor="editor"
+      />
+
     </fieldset>
 
     <div class="actions">

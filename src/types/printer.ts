@@ -20,3 +20,5 @@ export interface Box {
 }
 
 export type EditorSection = 'text' | 'grid' | 'copies'
+
+export type ActiveEditorSection = EditorSection | null
