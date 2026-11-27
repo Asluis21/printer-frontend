@@ -2,39 +2,38 @@
 import { nextTick, ref } from 'vue'
 import { FONTS, MAX_ITEMS } from '../services/printerService'
 import type { PrintEditor } from '../composables/usePrintEditor'
-import QuickEditor from './QuickEditor.vue'
 import type { ActiveEditorSection } from '../types/printer'
+import QuickEditor from './QuickEditor.vue'
+
+const props = defineProps<{
+  editor: PrintEditor
+}>()
 
 const activeSection = defineModel<ActiveEditorSection>(
     'activeSection',
     { required: true }
 )
 
-const props = defineProps<{
-  editor: PrintEditor
-}>()
-
 const {
   items,
   copies,
   selectedId,
+  selectedIds,
   loading,
   status,
   grid,
   gridCount,
   maxX,
   maxY,
-  dirDegrees,
   toMm,
+  isSelected,
+  selectItem,
   addItem,
   removeItem,
   fillGrid,
   overflows,
   changeCopies,
-  reset,
-  onSubmit,
-  isSelected,
-  selectItem
+  onSubmit
 } = props.editor
 
 const formEl = ref<HTMLFormElement | null>(null)
@@ -46,7 +45,13 @@ const directions = [
   { value: 4, label: '270°' }
 ]
 
-const handleAddItem = async () => {
+const isExpanded = (id: number) =>
+    selectedIds.value.length === 1 &&
+    selectedId.value === id
+
+const handleAdd = async () => {
+  if (loading.value || items.value.length >= MAX_ITEMS) return
+
   addItem()
 
   await nextTick()
@@ -56,19 +61,57 @@ const handleAddItem = async () => {
       ?.focus()
 }
 
-const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent)
-const shortcutLabel = isMac ? '⌘ Enter' : 'Ctrl Enter'
+const handleFillGrid = () => {
+  if (loading.value) return
+
+  grid.cols = Math.min(
+      10,
+      Math.max(1, Math.round(Number(grid.cols)) || 1)
+  )
+
+  grid.rows = Math.min(
+      10,
+      Math.max(1, Math.round(Number(grid.rows)) || 1)
+  )
+
+  const removedTexts = items.value
+      .slice(gridCount.value)
+      .some(item => item.text.trim())
+
+  if (
+      removedTexts &&
+      !window.confirm(
+          'Some existing texts will be removed. Continue?'
+      )
+  ) return
+
+  fillGrid()
+
+  activeSection.value = 'text'
+}
+
+/* ---------- Keyboard shortcuts ---------- */
 
 const onFormKeydown = (e: KeyboardEvent) => {
-  if (
-      e.key === 'Enter' &&
-      (e.metaKey || e.ctrlKey) &&
-      !loading.value
-  ) {
+  if (e.key !== 'Enter' || e.isComposing) return
+
+  if (e.metaKey || e.ctrlKey) {
     e.preventDefault()
-    formEl.value?.requestSubmit()
+
+    if (!loading.value) {
+      formEl.value?.requestSubmit()
+    }
+
+    return
+  }
+
+  // Avoid accidental printing while editing text.
+  if (e.target instanceof HTMLInputElement) {
+    e.preventDefault()
   }
 }
+
+/* ---------- Validation of collapsed fields ---------- */
 
 let handlingInvalid = false
 let reportingInvalid = false
@@ -101,10 +144,19 @@ const onInvalid = async (event: Event) => {
     activeSection.value = section
   }
 
+  const itemId = field
+      .closest<HTMLElement>('[data-item-id]')
+      ?.dataset.itemId
+
+  if (itemId !== undefined) {
+    selectItem(Number(itemId))
+  }
+
   await nextTick()
 
   try {
     reportingInvalid = true
+
     field.focus()
     field.reportValidity()
   } finally {
@@ -124,187 +176,370 @@ const onInvalid = async (event: Event) => {
   >
 
     <fieldset :disabled="loading">
-      <div
-          v-show="activeSection === 'text'"
-          class="section"
-          data-section="text"
-      >
-        <div class="section-head">
-          <h2 class="section-title">
-            Texts <span class="count">{{ items.length }} / {{ MAX_ITEMS }}</span>
-          </h2>
-          <button
-              type="button"
-              class="btn small ghost"
-              :disabled="items.length >= MAX_ITEMS"
-              @click="handleAddItem"
-          >
-            + Add text
-          </button>
-        </div>
 
-        <ol class="items">
-          <li
-              v-for="(item, index) in items"
-              :key="item.id"
-              class="item"
-              :class="{ selected: isSelected(item.id) }"
-              @focusin="selectItem(item.id)"
-              @click="selectItem(item.id)"
-          >
-            <div class="item-head">
-              <!-- numbered from 1, like the backend's "Item 2: ..." errors -->
-              <span class="item-num" aria-hidden="true">{{ index + 1 }}</span>
-              <input
-                  :id="`item-text-${item.id}`"
-                  v-model="item.text"
-                  type="text"
-                  required
-                  :placeholder="`Text ${index + 1}`"
-                  :aria-label="`Text ${index + 1}`"
-              />
-              <button
-                  type="button"
-                  class="icon-btn"
-                  :disabled="items.length <= 1"
-                  :aria-label="`Remove text ${index + 1}`"
-                  title="Remove"
-                  @click.stop="removeItem(item.id)"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div class="item-grid">
-              <label class="field">
-                <span class="label">Font</span>
-                <select v-model="item.font">
-                  <option v-for="f in FONTS" :key="f" :value="f">{{ f }}</option>
-                </select>
-              </label>
-              <label class="field">
-                <span class="label">Size (pt)</span>
-                <input v-model.number="item.fontSize" type="number" min="4" max="200" required />
-              </label>
-              <label class="field">
-                <span class="label">X (dots)</span>
-                <input v-model.number="item.x" type="number" min="0" :max="maxX" required />
-              </label>
-              <label class="field">
-                <span class="label">Y (dots)</span>
-                <input v-model.number="item.y" type="number" min="0" :max="maxY" required />
-              </label>
-            </div>
-
-            <div class="item-foot">
-              <div
-                  class="segmented compact"
-                  role="group"
-                  :aria-label="`Rotation of text ${index + 1}`"
-              >
-                <button
-                    v-for="d in directions"
-                    :key="d.value"
-                    type="button"
-                    :class="{ active: item.dir === d.value }"
-                    :aria-pressed="item.dir === d.value"
-                    @click="item.dir = d.value"
-                >
-                  <span class="dir-arrow" :style="{ transform: `rotate(${dirDegrees(d.value)}deg)` }">
-                    →
-                  </span>
-                  {{ d.label }}
-                </button>
-              </div>
-              <span class="hint">≈ {{ toMm(item.x) }} × {{ toMm(item.y) }} mm</span>
-            </div>
-
-            <p v-if="overflows(item.id)" class="warn">
-              May run off the label edge. Check the preview.
-            </p>
-          </li>
-        </ol>
-      </div>
-
-      <div
-          v-show="activeSection === 'grid'"
-          class="section"
-          data-section="grid"
-      >
-        <h2 class="section-title">Grid helper</h2>
-        <div class="grid-helper">
-          <label class="field">
-            <span class="label">Columns</span>
-            <input v-model.number="grid.cols" type="number" />
-          </label>
-          <span class="times" aria-hidden="true">×</span>
-          <label class="field">
-            <span class="label">Rows</span>
-            <input v-model.number="grid.rows" type="number" />
-          </label>
-          <button type="button" class="btn small ghost" @click="fillGrid">Fill label</button>
-        </div>
-        <p class="hint">
-          Replaces the texts with {{ gridCount }} evenly spaced ones (up to 10 × 10), keeping
-          what you've typed in order and the selected text's font and size.
-        </p>
-      </div>
-
-      <div
-          v-show="activeSection === 'copies'"
-          class="section"
-          data-section="copies"
-      >
-        <div class="field copies-field">
-          <label class="label" for="copies">Copies of the label</label>
-          <div class="stepper">
-            <button
-                type="button"
-                aria-label="Fewer copies"
-                :disabled="copies <= 1"
-                @click="changeCopies(-1)"
-            >
-              −
-            </button>
-            <input id="copies" v-model.number="copies" type="number" min="1" max="99" required />
-            <button
-                type="button"
-                aria-label="More copies"
-                :disabled="copies >= 99"
-                @click="changeCopies(1)"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- QUICK EDIT -->
 
       <QuickEditor
           v-if="activeSection === null"
           :editor="editor"
       />
 
+      <!-- TEXT SETTINGS -->
+
+      <div
+          v-show="activeSection === 'text'"
+          class="section"
+          data-section="text"
+      >
+
+        <div class="section-head">
+          <h2 class="section-title">Text elements</h2>
+
+          <span class="count">
+            {{ items.length }} / {{ MAX_ITEMS }}
+          </span>
+        </div>
+
+        <button
+            type="button"
+            class="btn ghost full-width add-button"
+            :disabled="items.length >= MAX_ITEMS"
+            @click="handleAdd"
+        >
+          + Add text
+        </button>
+
+        <ol class="items">
+
+          <li
+              v-for="(item, index) in items"
+              :key="item.id"
+              :data-item-id="item.id"
+              class="item"
+              :class="{
+              selected: isSelected(item.id)
+            }"
+          >
+
+            <div class="item-head">
+
+              <button
+                  type="button"
+                  class="item-toggle"
+                  :aria-expanded="isExpanded(item.id)"
+                  @click="selectItem(
+                  item.id,
+                  $event.metaKey || $event.ctrlKey
+                )"
+              >
+
+                <span class="item-number">
+                  {{ String(index + 1).padStart(2, '0') }}
+                </span>
+
+                <span class="item-summary">
+
+                  <strong class="item-name">
+                    {{ item.text || `Text ${index + 1}` }}
+                  </strong>
+
+                  <span class="item-meta">
+                    {{ item.font }} · {{ item.fontSize }} pt
+                  </span>
+
+                </span>
+
+                <svg
+                    class="chevron"
+                    :class="{ expanded: isExpanded(item.id) }"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+
+              </button>
+
+              <button
+                  type="button"
+                  class="icon-button"
+                  title="Remove text"
+                  :aria-label="`Remove text ${index + 1}`"
+                  :disabled="items.length <= 1"
+                  @click="removeItem(item.id)"
+              >
+                ×
+              </button>
+
+            </div>
+
+            <!-- Keep fields mounted for native validation -->
+
+            <div
+                v-show="isExpanded(item.id)"
+                class="item-properties"
+            >
+
+              <label class="field">
+                <span>Content</span>
+
+                <input
+                    :id="`item-text-${item.id}`"
+                    v-model="item.text"
+                    type="text"
+                    required
+                    :placeholder="`Text ${index + 1}`"
+                />
+              </label>
+
+              <label class="field">
+                <span>Font family</span>
+
+                <select v-model="item.font">
+                  <option
+                      v-for="font in FONTS"
+                      :key="font"
+                      :value="font"
+                  >
+                    {{ font }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Font size (pt)</span>
+
+                <input
+                    v-model.number="item.fontSize"
+                    type="number"
+                    min="4"
+                    max="200"
+                    required
+                />
+              </label>
+
+              <div class="item-grid">
+
+                <label class="field">
+                  <span>X (dots)</span>
+
+                  <input
+                      v-model.number="item.x"
+                      type="number"
+                      min="0"
+                      :max="maxX"
+                      required
+                  />
+                </label>
+
+                <label class="field">
+                  <span>Y (dots)</span>
+
+                  <input
+                      v-model.number="item.y"
+                      type="number"
+                      min="0"
+                      :max="maxY"
+                      required
+                  />
+                </label>
+
+              </div>
+
+              <span class="hint">
+                Position:
+                {{ toMm(item.x) }} × {{ toMm(item.y) }} mm
+              </span>
+
+              <div class="field">
+
+                <span>Rotation</span>
+
+                <div class="segmented">
+
+                  <button
+                      v-for="direction in directions"
+                      :key="direction.value"
+                      type="button"
+                      :class="{
+                      active: item.dir === direction.value
+                    }"
+                      :aria-pressed="item.dir === direction.value"
+                      @click="item.dir = direction.value"
+                  >
+                    {{ direction.label }}
+                  </button>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            <p
+                v-if="overflows(item.id)"
+                class="warning"
+            >
+              Text may extend outside the label.
+            </p>
+
+          </li>
+
+        </ol>
+
+        <p
+            v-if="selectedIds.length > 1"
+            class="hint selection-hint"
+        >
+          {{ selectedIds.length }} texts selected.
+          Close Text settings to edit them together.
+        </p>
+
+      </div>
+
+      <!-- GRID SETTINGS -->
+
+      <div
+          v-show="activeSection === 'grid'"
+          class="section"
+          data-section="grid"
+      >
+
+        <h2 class="section-title">Grid settings</h2>
+
+        <p class="hint">
+          Automatically distribute texts across the label.
+        </p>
+
+        <div class="grid-fields">
+
+          <label class="field">
+            <span>Columns</span>
+
+            <input
+                v-model.number="grid.cols"
+                type="number"
+                step="any"
+            />
+          </label>
+
+          <label class="field">
+            <span>Rows</span>
+
+            <input
+                v-model.number="grid.rows"
+                type="number"
+                step="any"
+            />
+          </label>
+
+        </div>
+
+        <div class="grid-result">
+
+          <strong>{{ gridCount }}</strong>
+
+          <span>Text elements</span>
+
+        </div>
+
+        <button
+            type="button"
+            class="btn primary full-width"
+            @click="handleFillGrid"
+        >
+          Fill label
+        </button>
+
+        <p class="hint">
+          Up to 10 rows and 10 columns,
+          with a maximum of {{ MAX_ITEMS }} texts.
+          Existing content is preserved in order
+          when possible.
+        </p>
+
+      </div>
+
+      <!-- COPIES SETTINGS -->
+
+      <div
+          v-show="activeSection === 'copies'"
+          class="section"
+          data-section="copies"
+      >
+
+        <h2 class="section-title">Copies settings</h2>
+
+        <p class="hint">
+          Choose how many identical labels to print.
+        </p>
+
+        <label class="field" for="copies">
+          Number of copies
+        </label>
+
+        <div class="stepper">
+
+          <button
+              type="button"
+              aria-label="Decrease copies"
+              :disabled="copies <= 1"
+              @click="changeCopies(-1)"
+          >
+            −
+          </button>
+
+          <input
+              id="copies"
+              v-model.number="copies"
+              type="number"
+              min="1"
+              max="99"
+              required
+          />
+
+          <button
+              type="button"
+              aria-label="Increase copies"
+              :disabled="copies >= 99"
+              @click="changeCopies(1)"
+          >
+            +
+          </button>
+
+        </div>
+
+        <div class="grid-result">
+          <strong>{{ copies }}</strong>
+
+          <span>
+            {{ copies === 1 ? 'Label' : 'Labels' }}
+            per print job
+          </span>
+        </div>
+
+      </div>
+
     </fieldset>
 
-    <div class="actions">
-      <button type="button" class="btn ghost" :disabled="loading" @click="reset">
-        Clear
-      </button>
-      <button type="submit" class="btn primary" :disabled="loading">
-        <span v-if="loading" class="spinner" aria-hidden="true" />
-        {{ loading ? 'Printing…' : `Print ${copies > 1 ? `×${copies}` : ''}` }}
-        <kbd v-if="!loading">{{ shortcutLabel }}</kbd>
-      </button>
-    </div>
+    <!-- Printing status -->
 
     <div aria-live="polite">
-      <p v-if="status" class="status" :class="status.kind">
-        <span class="status-icon" aria-hidden="true">
-          {{ status.kind === 'success' ? '✓' : '!' }}
-        </span>
+
+      <p
+          v-if="status"
+          class="status"
+          :class="status.kind"
+      >
+        {{ status.kind === 'success' ? '✓' : '!' }}
         {{ status.text }}
       </p>
+
     </div>
+
   </form>
 </template>
 
@@ -313,254 +548,41 @@ const onInvalid = async (event: Event) => {
 <style scoped>
 fieldset {
   border: 0;
-  margin: 0;
   padding: 0;
+  margin: 0;
   min-width: 0;
 }
 
-/* ---------- Fields ---------- */
-.field {
+.section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
 }
 
-.copies-field {
-  margin-top: 16px;
-  max-width: 200px;
-}
-
-.label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-input,
-select,
-textarea {
-  font: inherit;
-  font-size: 16px;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  width: 100%;
-  box-sizing: border-box;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-textarea {
-  resize: vertical;
-  min-height: 96px;
-}
-
-input:focus,
-select:focus,
-textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-bg);
-}
-
-fieldset:disabled input,
-fieldset:disabled select,
-fieldset:disabled textarea {
-  opacity: 0.6;
-}
-
-/* ---------- Direction (segmented) ---------- */
-.segmented {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 4px;
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.segmented button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 38px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.segmented button:hover:not(:disabled) {
-  color: var(--text-h);
-}
-
-.segmented button.active {
-  color: var(--accent);
-  background: var(--bg);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  font-weight: 600;
-}
-
-.dir-arrow {
-  display: inline-block;
-  transition: transform 0.2s;
-}
-
-/* ---------- Copies stepper ---------- */
-.stepper {
-  display: flex;
-  align-items: stretch;
-}
-
-.stepper input {
-  text-align: center;
-  border-radius: 0;
-  border-inline: 0;
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-.stepper input::-webkit-outer-spin-button,
-.stepper input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
+.section-title {
   margin: 0;
 }
 
-.stepper button {
-  flex: 0 0 44px;
-  font: inherit;
-  font-size: 18px;
-  color: var(--text-h);
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  cursor: pointer;
-}
-
-.stepper button:first-child {
-  border-radius: 8px 0 0 8px;
-}
-
-.stepper button:last-child {
-  border-radius: 0 8px 8px 0;
-}
-
-.stepper button:hover:not(:disabled) {
-  color: var(--accent);
-}
-
-.stepper button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 28px;
-}
-
-.primary {
-  min-width: 140px;
-  color: var(--bg);
-  background: var(--accent);
-  border: 1px solid var(--accent);
-}
-
-.primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.primary kbd {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.status {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 20px;
-  padding: 12px 14px;
-  font-size: 15px;
-  border-radius: 8px;
-  animation: pop-in 0.2s ease-out;
-}
-
-.status-icon {
-  flex: 0 0 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 700;
-  border-radius: 50%;
-  color: var(--bg);
-}
-
-.success {
-  color: var(--success);
-  background: var(--success-bg);
-}
-
-.success .status-icon {
-  background: var(--success);
-}
-
-.error {
-  color: var(--danger);
-  background: var(--danger-bg);
-}
-
-.error .status-icon {
-  background: var(--danger);
-}
-
-/* ---------- Item list ---------- */
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.section-head .section-title {
-  margin: 0;
+  gap: 8px;
 }
 
 .count {
-  margin-left: 6px;
-  font-weight: 500;
-  letter-spacing: 0;
+  font-family: var(--mono);
   color: var(--text);
+  font-size: 11px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.add-button {
+  border-style: dashed;
+  color: var(--accent);
 }
 
 .items {
@@ -569,161 +591,240 @@ fieldset:disabled textarea {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .item {
-  padding: 14px;
+  background: var(--workspace);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  border-radius: 6px;
+  padding: 10px;
 }
 
 .item.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-bg);
+  background: var(--accent-bg);
 }
 
 .item-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
 }
 
-.item-num {
-  flex: 0 0 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 700;
-  border-radius: 50%;
+.item-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 8px;
+  min-width: 0;
   color: var(--text-h);
-  background: var(--code-bg);
-}
-
-.item.selected .item-num {
-  color: var(--bg);
-  background: var(--accent);
-}
-
-.icon-btn {
-  flex: 0 0 36px;
-  height: 36px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--text);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
+  border: 0;
+  padding: 4px 0;
 }
 
-.icon-btn:hover:not(:disabled) {
-  color: var(--danger);
-  border-color: var(--border);
+.item-number {
+  color: var(--accent);
+  font: 11px var(--mono);
 }
 
-.icon-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.icon-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.item-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.item-grid input,
-.item-grid select {
-  padding: 8px 10px;
-  font-size: 15px;
-}
-
-.item-grid .label {
-  font-size: 13px;
-}
-
-.item-foot {
+.item-summary {
+  min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 3px;
 }
 
-.segmented.compact {
-  flex: none;
+.item-name,
+.item-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.segmented.compact button {
-  min-height: 32px;
+.item-name {
   font-size: 13px;
+  font-weight: 500;
 }
 
-.warn {
-  margin: 10px 0 0;
-  font-size: 13px;
+.item-meta {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.icon-button {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.icon-button:hover:not(:disabled) {
   color: var(--danger);
+  background: var(--danger-bg);
 }
 
-/* ---------- Grid helper ---------- */
-.grid-helper {
+.icon-button:disabled {
+  opacity: 0.35;
+}
+
+.item-properties {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
-.grid-helper .field {
-  width: 90px;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  min-width: 0;
 }
 
-.grid-helper .times {
-  padding-bottom: 10px;
+input,
+select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 8px 10px;
+  background: var(--workspace);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
 }
 
-.stepper button:focus-visible,
-.segmented button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
-@media (max-width: 480px) {
-  .actions {
-    flex-direction: column-reverse;
-  }
+.item-grid,
+.grid-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
 
-  .actions .btn {
-    width: 100%;
-  }
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
 
-  .primary kbd {
-    display: none;
-  }
+.segmented button {
+  padding: 7px 4px;
+  background: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
 
-  .copies-field {
-    max-width: none;
-  }
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
 
-  .item-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+.grid-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 10px;
+  background: var(--workspace);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
 
-  .item-foot {
-    flex-direction: column;
-    align-items: stretch;
-  }
+.grid-result strong {
+  font: 32px var(--mono);
+  color: var(--accent);
+}
 
-  .segmented.compact {
-    flex: none;
-  }
+.grid-result span {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  gap: 6px;
+}
+
+.stepper input {
+  text-align: center;
+  appearance: textfield;
+}
+
+.stepper input::-webkit-inner-spin-button,
+.stepper input::-webkit-outer-spin-button {
+  appearance: none;
+}
+
+.stepper button {
+  background: var(--control-bg);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 18px;
+}
+
+.stepper button:disabled {
+  opacity: 0.4;
+}
+
+.selection-hint {
+  padding: 8px;
+  background: var(--accent-bg);
+  border-radius: 5px;
+}
+
+.warning {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.status {
+  padding: 12px;
+  margin-top: 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.status.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.status.error {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 </style>

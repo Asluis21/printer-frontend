@@ -1,101 +1,270 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import PageHeader from '../components/PageHeader.vue'
 import PrintForm from '../components/PrintForm.vue'
 import LabelPreview from '../components/LabelPreview.vue'
 import PrintHistory from '../components/PrintHistory.vue'
+
 import { usePrintEditor } from '../composables/usePrintEditor'
-import type { ActiveEditorSection } from '../types/printer'
+
+import type {
+  ActiveEditorSection
+} from '../types/printer'
+
+/* ---------- Shared editor state ---------- */
 
 const editor = usePrintEditor()
 
-const { history, loading, reuse } = editor
+const {
+  history,
+  loading,
+  reuse,
+  reset,
+  items,
+  copies,
+  selectedIds,
+  selected
+} = editor
+
+/* ---------- Navigation ---------- */
 
 const activeSection = ref<ActiveEditorSection>(null)
+
+const formId = 'print-form'
+
+const panelName = computed(() =>
+    activeSection.value === null
+        ? 'Quick edit'
+        : ({
+          text: 'Text settings',
+          grid: 'Grid settings',
+          copies: 'Copies settings'
+        }[activeSection.value])
+)
 </script>
 
 <template>
-  <section class="page">
+  <section class="studio">
+
+    <!-- Application header -->
 
     <PageHeader
         v-model:active-section="activeSection"
-        eyebrow="Printer"
-        title="New print job"
-        subtitle="Add one or more texts, then drag each one on the label to place it."
+        :loading="loading"
+        :copies="copies"
+        :form-id="formId"
+        @clear="reset"
     />
 
-    <div class="layout">
+    <!-- Main workspace -->
 
-      <PrintForm
-          :editor="editor"
-          v-model:active-section="activeSection"
-      />
+    <main class="workspace">
 
-      <LabelPreview :editor="editor" />
+      <!-- Left configuration panel -->
 
-      <PrintHistory
-          :history="history"
-          :loading="loading"
-          @reuse="reuse"
-      />
+      <aside
+          class="configuration-panel"
+          :aria-label="panelName"
+      >
 
-    </div>
+        <PrintForm
+            :id="formId"
+            :editor="editor"
+            v-model:active-section="activeSection"
+        />
+
+      </aside>
+
+      <!-- Center preview panel -->
+
+      <section
+          class="preview-panel"
+          aria-label="Label design workspace"
+      >
+
+        <LabelPreview
+            :editor="editor"
+        />
+
+      </section>
+
+      <!-- Right history panel -->
+
+      <aside
+          class="history-panel"
+          aria-label="Print history"
+      >
+
+        <PrintHistory
+            :history="history"
+            :loading="loading"
+            @reuse="reuse"
+        />
+
+      </aside>
+
+    </main>
+
+    <!-- Bottom status bar -->
+
+    <footer class="status-bar">
+
+      <div class="status-group">
+
+        <span>
+          {{ items.length }}
+          {{ items.length === 1 ? 'text' : 'texts' }}
+        </span>
+
+        <span class="selected-count">
+          {{ selectedIds.length }} selected
+        </span>
+
+        <span
+            v-if="selected && selectedIds.length === 1"
+        >
+          X: {{ selected.x }} · Y: {{ selected.y }}
+        </span>
+
+      </div>
+
+      <span>
+        {{ panelName }}
+      </span>
+
+      <span>
+        {{ copies }}
+        {{ copies === 1 ? 'copy' : 'copies' }}
+      </span>
+
+    </footer>
 
   </section>
 </template>
 
 <style scoped>
-.page {
-  --success: #15803d;
-  --success-bg: rgba(22, 163, 74, 0.1);
-  --danger: #b91c1c;
-  --danger-bg: rgba(220, 38, 38, 0.1);
-  --label-bg: #ffffff;
-  --label-ink: #111111;
-  --label-grid: rgba(0, 0, 0, 0.06);
-  --radius: 12px;
+/* ---------- Application layout ---------- */
 
-  padding: 40px 32px 56px;
+.studio {
+  display: grid;
+
+  grid-template-rows:
+    auto
+    minmax(0, 1fr)
+    auto;
+
+  height: 100dvh;
+  min-width: 0;
+
   text-align: left;
 }
 
-.layout {
+/* ---------- Workspace ---------- */
+
+.workspace {
   display: grid;
+
   grid-template-columns:
-      minmax(0, 1fr)
-      minmax(0, 1.5fr)
-      minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
+    minmax(260px, 1.1fr)
+    minmax(0, 2.8fr)
+    minmax(220px, 0.9fr);
+
+  gap: 12px;
+
+  min-height: 0;
+
+  padding: 12px;
 }
 
-.layout > * {
+/* ---------- Independent panels ---------- */
+
+.configuration-panel,
+.preview-panel,
+.history-panel {
   min-width: 0;
+  min-height: 0;
+
+  overflow: auto;
+
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  .page {
-    --success: #4ade80;
-    --success-bg: rgba(74, 222, 128, 0.12);
-    --danger: #f87171;
-    --danger-bg: rgba(248, 113, 113, 0.12);
-  }
+/* ---------- Status bar ---------- */
+
+.status-bar {
+  display: flex;
+
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+
+  gap: 8px 18px;
+
+  padding: 8px 16px;
+
+  background: var(--bg);
+
+  border-top: 1px solid var(--border);
+
+  color: var(--text);
+
+  font: 11px var(--mono);
 }
+
+.status-group {
+  display: flex;
+
+  align-items: center;
+  flex-wrap: wrap;
+
+  gap: 8px 16px;
+}
+
+.selected-count {
+  color: var(--accent);
+}
+
+/* ---------- Tablet layout ---------- */
 
 @media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 1fr 1.5fr;
+  .studio {
+    height: auto;
+    min-height: 100dvh;
+
+    grid-template-rows:
+      auto
+      1fr
+      auto;
   }
 
-  .layout > :last-child {
+  .workspace {
+    grid-template-columns:
+      minmax(250px, 1fr)
+      minmax(0, 2fr);
+
+    align-items: start;
+  }
+
+  .history-panel {
     grid-column: 1 / -1;
   }
 }
 
-@media (max-width: 768px) {
-  .layout {
-    grid-template-columns: 1fr;
+/* ---------- Mobile layout ---------- */
+
+@media (max-width: 720px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-panel {
+    grid-column: auto;
+  }
+
+  .preview-panel {
+    grid-row: 1;
   }
 }
 </style>
