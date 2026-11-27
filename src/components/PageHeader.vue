@@ -52,7 +52,7 @@ const options: { label: string; value: EditorSection }[] = [
   gap: 24px;
   margin-bottom: 28px;
   padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid #ffffff;
 }
 
 .header-info {
