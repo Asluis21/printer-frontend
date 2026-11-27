@@ -385,6 +385,24 @@ const previewFontStyle = (font: string) => {
   }
 }
 
+const itemFontStyle = (item: EditorItem) => {
+  return {
+    ...previewFontStyle(item.font),
+
+    fontStyle: item.previewStyle?.italic
+        ? 'italic'
+        : 'normal',
+
+    textDecoration: item.previewStyle?.underline
+        ? 'underline'
+        : 'none',
+
+    fill: item.text
+        ? item.previewStyle?.color ?? '#111111'
+        : undefined
+  }
+}
+
 /* ---------- Measure SVG elements ---------- */
 
 const itemEls = new Map<number, SVGGElement>()
@@ -898,7 +916,7 @@ const onPreviewKeydown = (e: KeyboardEvent) => {
                     :x="item.x"
                     :y="item.y"
                     :font-size="ptToDots(item.fontSize)"
-                    :style="previewFontStyle(item.font)"
+                    :style="itemFontStyle(item)"
                     dominant-baseline="hanging"
                     class="label-text"
                     :class="{

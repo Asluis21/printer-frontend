@@ -79,8 +79,18 @@ export function usePrintEditor() {
     const dirDegrees = (dir: number) =>
         (dir - 1) * 90
 
-    const toRequestItems = (list: EditorItem[]): Required<PrintItem>[] =>
-        list.map(({ id: _id, ...rest }) => ({ ...rest }))
+    const toRequestItems = (
+        list: EditorItem[]
+    ): Required<PrintItem>[] => {
+        return list.map(item => ({
+            text: item.text,
+            x: item.x,
+            y: item.y,
+            dir: item.dir,
+            font: item.font,
+            fontSize: item.fontSize
+        }))
+    }
 
     const endpoint = `${import.meta.env.VITE_API_URL ?? ''}/printer/print`
 

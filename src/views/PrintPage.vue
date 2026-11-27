@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader.vue'
 import PrintForm from '../components/PrintForm.vue'
 import LabelPreview from '../components/LabelPreview.vue'
 import PrintHistory from '../components/PrintHistory.vue'
-
+import TextFormatting from '../components/TextFormatting.vue'
 import { usePrintEditor } from '../composables/usePrintEditor'
 
 import type {
@@ -72,6 +72,11 @@ const panelName = computed(() =>
             :id="formId"
             :editor="editor"
             v-model:active-section="activeSection"
+        />
+
+        <TextFormatting
+            v-if="activeSection === null"
+            :editor="editor"
         />
 
       </aside>
@@ -266,5 +271,15 @@ const panelName = computed(() =>
   .preview-panel {
     grid-row: 1;
   }
+}
+
+.configuration-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.configuration-panel > * {
+  flex-shrink: 0;
 }
 </style>

@@ -1,7 +1,14 @@
 import type { PrintItem } from '../services/printerService'
 
+export interface PreviewTextStyle {
+    italic: boolean
+    underline: boolean
+    color: string
+}
+
 export type EditorItem = Required<PrintItem> & {
     id: number
+    previewStyle?: PreviewTextStyle
 }
 
 export interface HistoryEntry {
