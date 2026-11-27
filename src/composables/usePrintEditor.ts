@@ -35,6 +35,17 @@ export function usePrintEditor() {
     const items = ref<EditorItem[]>([firstItem()])
     const copies = ref(1)
     const selectedId = ref<number | null>(items.value[0]!.id)
+    const selectedIds = ref<number[]>([items.value[0]!.id])
+
+    const selectedItems = computed(() =>
+        items.value.filter(item =>
+            selectedIds.value.includes(item.id)
+        )
+    )
+
+    const isSelected = (id: number): boolean => {
+        return selectedIds.value.includes(id)
+    }
     const sentOk = ref(false)
 
     const history = ref<HistoryEntry[]>([])
@@ -114,7 +125,7 @@ export function usePrintEditor() {
         })
 
         items.value.push(item)
-        selectedId.value = item.id
+        selectItem(item.id)
     }
 
     const removeItem = (id: number) => {
@@ -126,9 +137,20 @@ export function usePrintEditor() {
 
         items.value.splice(index, 1)
 
-        if (selectedId.value === id) {
-            selectedId.value =
-                items.value[Math.min(index, items.value.length - 1)]!.id
+        if (!isSelected(id)) return
+
+        selectedIds.value = selectedIds.value.filter(
+            selected => selected !== id
+        )
+
+        if (selectedIds.value.length === 0) {
+            const next = items.value[
+                Math.min(index, items.value.length - 1)
+                ]!
+
+            selectItem(next.id)
+        } else if (selectedId.value === id) {
+            selectedId.value = selectedIds.value.at(-1) ?? null
         }
     }
 
@@ -162,7 +184,7 @@ export function usePrintEditor() {
         )
 
         items.value = next
-        selectedId.value = next[0]!.id
+        selectItem(next[0]!.id)
     }
 
     const overflows = (id: number) => {
@@ -186,7 +208,7 @@ export function usePrintEditor() {
 
     const reset = () => {
         items.value = [firstItem()]
-        selectedId.value = items.value[0]!.id
+        selectItem(items.value[0]!.id)
         copies.value = 1
         sentOk.value = false
         error.value = null
@@ -195,7 +217,7 @@ export function usePrintEditor() {
     const reuse = (entry: HistoryEntry) => {
         items.value = entry.items.map(i => newItem(i))
         copies.value = entry.copies
-        selectedId.value = items.value[0]!.id
+        selectItem(items.value[0]!.id)
         sentOk.value = false
         error.value = null
     }
@@ -227,6 +249,35 @@ export function usePrintEditor() {
         history.value = history.value.slice(0, 5)
     }
 
+    const selectItem = (id: number, multiple = false) => {
+        if (!multiple) {
+            selectedIds.value = [id]
+            selectedId.value = id
+            return
+        }
+
+        if (isSelected(id)) {
+            selectedIds.value = selectedIds.value.filter(
+                selected => selected !== id
+            )
+
+            if (selectedId.value === id) {
+                selectedId.value = selectedIds.value.at(-1) ?? null
+            }
+        } else {
+            selectedIds.value = [...selectedIds.value, id]
+            selectedId.value = id
+        }
+    }
+
+    const updateSelectedText = (text: string) => {
+        if (loading.value || !text.trim()) return
+
+        selectedItems.value.forEach(item => {
+            item.text = text
+        })
+    }
+
     return {
         items,
         copies,
@@ -256,7 +307,12 @@ export function usePrintEditor() {
         changeCopies,
         reset,
         reuse,
-        onSubmit
+        onSubmit,
+        selectedIds,
+        selectedItems,
+        isSelected,
+        selectItem,
+        updateSelectedText,
     }
 
 }

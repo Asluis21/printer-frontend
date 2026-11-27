@@ -30,7 +30,9 @@ const {
   overflows,
   changeCopies,
   reset,
-  onSubmit
+  onSubmit,
+  isSelected,
+  selectItem
 } = props.editor
 
 const formEl = ref<HTMLFormElement | null>(null)
@@ -143,9 +145,9 @@ const onInvalid = async (event: Event) => {
               v-for="(item, index) in items"
               :key="item.id"
               class="item"
-              :class="{ selected: item.id === selectedId }"
-              @focusin="selectedId = item.id"
-              @click="selectedId = item.id"
+              :class="{ selected: isSelected(item.id) }"
+              @focusin="selectItem(item.id)"
+              @click="selectItem(item.id)"
           >
             <div class="item-head">
               <!-- numbered from 1, like the backend's "Item 2: ..." errors -->

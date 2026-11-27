@@ -6,9 +6,10 @@ import type { EditorItem, Box } from '../types/printer'
 const props = defineProps<{ editor: PrintEditor }>()
 
 const {
-  items, selectedId, selected, selectedIndex, loading,
+  items, selected, selectedIndex, loading,
   label, maxX, maxY, boxes, clamp, dirDegrees, ptToDots,
-  overflows, endpoint, payload
+  overflows, endpoint, payload, selectedIds, isSelected,
+  selectItem, updateSelectedText
 } = props.editor
 
 type PreviewFont = { family: string; weight?: number; stretch?: string }
@@ -79,13 +80,33 @@ const toSvgPoint = (e: PointerEvent) => {
   return new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
 }
 
-const onItemPointerDown = (item: EditorItem, e: PointerEvent) => {
-  if (loading.value) return
-  selectedId.value = item.id
+const onItemPointerDown = (
+    item: EditorItem,
+    e: PointerEvent
+) => {
+  if (loading.value || e.button !== 0) return
+
+  const multiple = e.metaKey || e.ctrlKey
+
+  selectItem(item.id, multiple)
+
+  if (multiple) {
+    e.preventDefault()
+    dragging.value = false
+    return
+  }
+
   const p = toSvgPoint(e)
+
   if (!p) return
-  grab = { dx: p.x - item.x, dy: p.y - item.y }
+
+  grab = {
+    dx: p.x - item.x,
+    dy: p.y - item.y
+  }
+
   dragging.value = true
+
   svgEl.value?.setPointerCapture(e.pointerId)
 }
 
@@ -103,6 +124,7 @@ const onPointerUp = () => {
 }
 
 const onPreviewKeydown = (e: KeyboardEvent) => {
+  if (loading.value || selectedIds.value.length !== 1) return
   const item = selected.value
   if (!item) return
   const step = e.shiftKey ? 10 : 1
@@ -118,6 +140,24 @@ const onPreviewKeydown = (e: KeyboardEvent) => {
   item.x = clamp(item.x + move[0], 0, maxX)
   item.y = clamp(item.y + move[1], 0, maxY)
 }
+
+const bulkText = ref('')
+
+const applyBulkText = () => {
+  if (
+      loading.value ||
+      selectedIds.value.length < 2 ||
+      !bulkText.value.trim()
+  ) return
+
+  updateSelectedText(bulkText.value)
+
+  bulkText.value = ''
+}
+
+watch(selectedIds, () => {
+  bulkText.value = ''
+})
 </script>
 
 <template>
@@ -154,7 +194,7 @@ const onPreviewKeydown = (e: KeyboardEvent) => {
       <rect :width="label.width" :height="label.height" fill="url(#grid)" />
 
       <!-- crosshair guides for the selected text -->
-      <template v-if="selected">
+      <template v-if="selected && selectedIds.length === 1">
         <line :x1="selected.x" y1="0" :x2="selected.x" :y2="label.height" class="guide" />
         <line x1="0" :y1="selected.y" :x2="label.width" :y2="selected.y" class="guide" />
       </template>
@@ -184,15 +224,24 @@ const onPreviewKeydown = (e: KeyboardEvent) => {
             :height="boxes[item.id]!.height + 8"
             rx="4"
             class="hit"
-            :class="{ selected: item.id === selectedId, overflow: overflows(item.id) }"
+            :class="{ selected: isSelected(item.id), overflow: overflows(item.id) }"
             @pointerdown="onItemPointerDown(item, $event)"
         />
       </template>
 
-      <circle v-if="selected" :cx="selected.x" :cy="selected.y" r="8" class="origin" />
+      <circle
+          v-if="selected && selectedIds.length === 1"
+          :cx="selected.x"
+          :cy="selected.y"
+          r="8"
+          class="origin"
+      />
     </svg>
 
-    <p v-if="selected" class="coords">
+    <p
+        v-if="selected && selectedIds.length === 1"
+        class="coords"
+    >
       <span>Text <strong>{{ selectedIndex + 1 }}</strong></span>
       <span>X <strong>{{ selected.x }}</strong></span>
       <span>Y <strong>{{ selected.y }}</strong></span>
@@ -203,6 +252,46 @@ const onPreviewKeydown = (e: KeyboardEvent) => {
       (hold Shift for 10). Red outlines may run off the label. The preview is approximate:
       the printer's fonts look a bit different.
     </p>
+
+    <div
+        v-if="selectedIds.length > 1"
+        class="bulk-editor"
+    >
+      <div class="bulk-header">
+        <h3>Edit selected texts</h3>
+
+        <span class="selection-count">
+            {{ selectedIds.length }} selected
+        </span>
+      </div>
+
+      <label class="bulk-label" for="bulk-text">
+        New text
+      </label>
+
+      <input
+          id="bulk-text"
+          v-model="bulkText"
+          type="text"
+          placeholder="Enter text for selected items"
+          :disabled="loading"
+          @keydown.enter.prevent="applyBulkText"
+      />
+
+      <button
+          type="button"
+          class="btn ghost"
+          :disabled="loading || !bulkText.trim()"
+          @click="applyBulkText"
+      >
+        Apply to selected
+      </button>
+
+      <p class="hint">
+        Only the text content will be modified.
+        Font, size and position will be preserved.
+      </p>
+    </div>
 
     <details class="request">
       <summary>Show request</summary>
@@ -386,5 +475,68 @@ const onPreviewKeydown = (e: KeyboardEvent) => {
 .label-canvas:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.bulk-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  border-radius: 10px;
+}
+
+.bulk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bulk-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.selection-count {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--bg);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.bulk-label {
+  font-size: 14px;
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.bulk-editor input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid #ffffff;
+  border-radius: 8px;
+}
+
+.bulk-editor input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.bulk-editor .btn {
+  width: 100%;
 }
 </style>
